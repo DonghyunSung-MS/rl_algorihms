@@ -53,12 +53,15 @@ def calculate_gae(masks,rewards,old_values, args):
 def surrogate_loss(actor, old_policy_log,
                    advantages_samples, states_samples,  actions_samples,
                    mini_batch_index):
+
     mu, std = actor(states_samples)
-    new_policy_samples = actor.get_log_prob(actions_samples, mu, std).squeeze(1)
+    new_policy_samples = actor.get_log_prob(actions_samples, mu, std)
+
     #print(new_policy_samples.shape)
     old_policy_samples = old_policy_log[mini_batch_index]
+    #print(new_policy_samples.shape, old_policy_samples.shape, advantages_samples.shape)
     ratio = torch.exp(new_policy_samples - old_policy_samples)
-    #print(new_policy_samples.shape, ratio.shape, advantages_samples.shape)
+
     surrogate_loss = ratio * advantages_samples
 
     return surrogate_loss, ratio

@@ -18,16 +18,19 @@ from agents.ppo.core import PPOActor, PPOCritic
 
 
 class PPOAgent:
-    def __init__(self, env, args):
+    def __init__(self, env, args, seed):
         self._env = env
         self._logger = None
         """argument to self value"""
         self.render = args.render
         self.img = None
-
+        torch.manual_seed(seed)
+        np.random.seed(seed)
         self.log_dir = args.log_dir
         self.log_interval = args.log_interval
+
         self.model_dir = args.model_dir
+        self.save_interval = args.save_interval
 
         self.max_iter = args.max_iter
         self.batch_size = args.batch_size
@@ -42,6 +45,8 @@ class PPOAgent:
 
         self.state_dim = sum([v.shape[0] for k, v in self._env.observation_spec().items()])
         self.action_dim = self._env.action_spec().shape[0]
+        print("State spec : ",self._env.observation_spec())
+        print("Action spec: ",self._env.action_spec())
 
         self.dev = None
         if args.gpu:
@@ -56,7 +61,7 @@ class PPOAgent:
         self.critic_optim = optim.Adam(self._critic.parameters(), lr=self.critic_lr)
 
         self.history = None
-
+        self.global_episode = 0
     def test_interact(self, model_path):
         self._actor.load_state_dict(torch.load(model_path))
 
@@ -67,15 +72,14 @@ class PPOAgent:
                     s = v
                 else:
                     s = np.hstack([s, v])
-            j_vel = time_step.observation["joint_velocity"]
             s_3d = np.reshape(s, [1, self.state_dim])
             mu, std = self._actor(torch.Tensor(s_3d).to(self.dev))
-            p_out = self._actor.get_action(mu, std)
-            pd_torque = self._env._task.PD_torque(p_out,j_vel)
+            action = self._actor.get_action(mu, std)
 
-            return pd_torque
+            return action
 
         viewer.launch(self._env, policy=source_policy)
+
     def train(self):
         log_file = os.path.join(self.log_dir,"log.txt")
         self._logger = logger.Logger()
@@ -85,7 +89,7 @@ class PPOAgent:
         total_samples = 0
         for iter in range(self.max_iter):
             self.history = trajBuff.Trajectory()
-            sample_num, avg_train_return, avg_steps = self._rollout()
+            sample_num, avg_train_reward, avg_train_return, avg_steps = self._rollout()
             #print(len(self.history.states))
             total_samples += sample_num
             wall_time = time.time() - start_time
@@ -94,13 +98,18 @@ class PPOAgent:
                 self._logger.log_tabular("Iteration", iter+1)
                 self._logger.log_tabular("Wall_Time", wall_time)
                 self._logger.log_tabular("Samples", total_samples)
-                self._logger.log_tabular("Train_Return", avg_train_return)
-                self._logger.log_tabular("Train_Paths", avg_steps)
+                self._logger.log_tabular("Avg_reward_iter", avg_train_reward)
+                self._logger.log_tabular("Avg_Return_iter", avg_train_return)
+                self._logger.log_tabular("Avg_ep_len_iter", avg_steps)
+
                 wandb.log({"Iteration": iter+1,
                            "Wall_Time": wall_time,
                            "Samples": total_samples,
-                           "Train_return": avg_train_return,
-                           "Train_Paths": avg_steps})
+                           "Avg_reward_iter": avg_train_reward,
+                           "Avg_Return_iter": avg_train_return,
+                           "Avg_ep_len_iter": avg_steps})
+
+            if (iter+1)%self.save_interval==0:
                 self.save_model(iter, self.model_dir)
             self._update(iter)
 
@@ -112,16 +121,24 @@ class PPOAgent:
         rewards = self.history.rewards
         masks = self.history.masks
 
-        actions = torch.Tensor(actions).squeeze(-1)
-        rewards = torch.Tensor(rewards)
-        masks = torch.Tensor(masks)
+        states = torch.Tensor(states).squeeze(1)
+        actions = torch.Tensor(actions).squeeze(1)
+        rewards = torch.Tensor(rewards).unsqueeze(1)
+        masks = torch.Tensor(masks).unsqueeze(1)
+
+        #print("states_shape",states[0].shape)
+        #print("states_tensor_shape",torch.Tensor(states).shape)
+        #print("actions_shape",actions.shape)
+        #print("rewards_shape",rewards.shape)
+        #print("masks_shape",masks.shape)
 
         old_values = self._critic(torch.Tensor(states).to(self.dev))
 
         rewards2go, advantages = rl_utills.calculate_gae(masks, rewards, old_values, self)
 
         mu, std = self._actor(torch.Tensor(states).to(self.dev))
-        old_policy_log = self._actor.get_log_prob(actions.to(self.dev), mu, std).squeeze(1)
+        old_policy_log = self._actor.get_log_prob(actions.to(self.dev), mu, std)
+
         mse = torch.nn.MSELoss()
 
         num_sample = len(rewards)
@@ -137,17 +154,18 @@ class PPOAgent:
                 mini_batch_index = torch.LongTensor(mini_batch_index).to(self.dev)
 
                 states_samples = torch.Tensor(states)[mini_batch_index].to(self.dev)
-                actions_samples = actions[mini_batch_index].to(self.dev)
-                advantages_samples = advantages.unsqueeze(1)[mini_batch_index].to(self.dev)
-                rewards2go_samples = rewards2go.unsqueeze(1)[mini_batch_index].to(self.dev)
+                actions_samples = torch.Tensor(actions)[mini_batch_index].to(self.dev)
+                advantages_samples = advantages[mini_batch_index].to(self.dev)
+                rewards2go_samples = rewards2go[mini_batch_index].to(self.dev)
 
                 old_values_samples = old_values[mini_batch_index].detach()
 
-                new_values_samples = self._critic(states_samples).squeeze(1)
-
+                new_values_samples = self._critic(states_samples)
+                #print("new",new_values_samples.shape)
+                #print("old",old_values_samples.shape)
+                #print("rewards2go_samples",rewards2go_samples.shape)
                 #Monte
                 critic_loss = mse(new_values_samples, rewards2go_samples)
-                #print(new_values_samples.shape, rewards2go_samples.shape)
                 #Surrogate Loss
 
                 actor_loss, ratio = rl_utills.surrogate_loss(self._actor, old_policy_log.detach(),
@@ -179,8 +197,9 @@ class PPOAgent:
 
     def _rollout(self):
         """rollout utill sample num is larger thatn max samples per iter"""
+
         sample_num = 0
-        episode = 1
+        episode = 0
         avg_train_return = 0
         avg_steps = 0
         while sample_num < self.total_sample_size:
@@ -188,17 +207,14 @@ class PPOAgent:
             total_reward_per_ep = 0
             time_step = self._env.reset()
             s, _ , __ = self.history.covert_time_step_data(time_step)
-            j_vel = time_step.observation["joint_velocity"]
             s_3d = np.reshape(s, [1, self.state_dim])
             while not time_step.last():
                 tic = time.time()
                 mu, std = self._actor(torch.Tensor(s_3d).to(self.dev))
-                p_out = self._actor.get_action(mu, std)
-                pd_torque = self._env._task.PD_torque(p_out,j_vel)
-                time_step = self._env.step(pd_torque)
-                j_vel = time_step.observation["joint_velocity"]
+                action = self._actor.get_action(mu, std)
+                time_step = self._env.step(action)
                 s_, r , m = self.history.covert_time_step_data(time_step)
-                self.history.store_history(p_out, s_3d, r, m)
+                self.history.store_history(action, s_3d, r, m)
                 s = s_
                 s_3d = np.reshape(s, [1, self.state_dim])
                 total_reward_per_ep += r
@@ -208,14 +224,20 @@ class PPOAgent:
 
                 steps += 1
 
-
-            avg_steps = (avg_steps*episode + steps)/(episode + 1)
-            avg_train_return = (avg_train_return*episode + total_reward_per_ep)/(episode + 1)
             episode += 1
+            self.global_episode += 1
+            wandb.log({"episode":self.global_episode,
+                       "Ep_total_reward": total_reward_per_ep,
+                       "Ep_Avg_reward": total_reward_per_ep / steps,
+                       "Ep_len": steps})
 
             sample_num = self.history.get_trajLength()
 
-        return sample_num, avg_train_return, avg_steps
+        avg_steps = sample_num / episode
+        sum_reward_iter = self.history.calc_return()
+        avg_train_return = sum_reward_iter / episode
+        avg_train_reward = sum_reward_iter / steps
+        return sample_num, avg_train_reward, avg_train_return, avg_steps
 
     def _render(self, tic, steps):
         max_frame = 90
