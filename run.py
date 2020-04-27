@@ -7,14 +7,14 @@ from rl_configs import RL_CONFIGS
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env",type=str,default="pendulum")
+    parser.add_argument("--env",type=str,default="acrobat")
     parser.add_argument("--seed",type=int,default=1)
     args = parser.parse_args()
     wandb.init(project="custom-rl-algorithms-test")
 
     configs = RL_CONFIGS[args.env] #presetting prameters for each enviroment.
     wandb.config.update(configs)
-    env = suite.load("pendulum","swingup")
+    env = suite.load("acrobat","swingup")
     env._task.__init__(random= args.seed)
 
 

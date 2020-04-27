@@ -8,13 +8,13 @@ import agents.ppo.rl_agent as rl_agent
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env",type=str,default="pendulum")
+    parser.add_argument("--env",type=str,default="acrobat")
     parser.add_argument("--seed",type=int,default=1)
     args = parser.parse_args()
 
     configs = RL_CONFIGS[args.env] #presetting prameters for each enviroment.
 
-    env = suite.load("pendulum","swingup")
+    env = suite.load("acrobat","swingup")
     env._task.__init__(random= args.seed)
     model_path = configs.model_dir+'989th_model_a.pth.tar'
 
