@@ -22,7 +22,7 @@ RL_CONFIGS = {
         "batch_size":400,
         "total_sample_size":4000
     }),
-    "acrobat":
+    "acrobot":
     edict({
         "gpu":True,
         "render":False,
