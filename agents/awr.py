@@ -134,3 +134,7 @@ class AWRAgent(Agent):
             self._logger.log_tabular("Critic_loss", total_critic_loss.item()/self.model_update_num_critic)
             self._logger.print_tabular()
             self._logger.dump_tabular()
+        if self.wandb:
+            wandb.log({"Actor_loss": total_actor_loss.item()/self.model_update_num_actor,
+		       "Critic_loss": total_critic_loss.item()/self.model_update_num_critic
+		      })
