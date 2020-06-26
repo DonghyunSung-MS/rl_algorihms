@@ -18,7 +18,7 @@ def mlp(input_size, hidden_size, output_size, layer_size, act,out_act=nn.Identit
 
     return nn.Sequential(*layers)
 
-def calculate_gae(masks,rewards,old_values, args):
+def calculate_gae(masks, rewards, old_values, args):
 
     previous_advantage = 0
     previsous_rewards2go = 0
