@@ -17,11 +17,13 @@ class PPOAgent(Agent):
         total_samples = 0
         for iter in range(self.max_iter):
             self.history = Trajectory()
+
             sample_num, mean_train_return, std_train_return, mean_ep_len = self._rollout()
 
             total_samples += sample_num
             wall_time = time.time() - start_time
             wall_time /= 60 * 60 # store time in hours
+
             actor_loss_mean, critic_loss_mean = self._update()
 
             #loggging

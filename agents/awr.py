@@ -25,13 +25,18 @@ class AWRAgent(Agent):
         start_time = time.time()
         total_samples = 0
         for iter in range(self.max_iter):
+
             sample_num, mean_train_return, std_train_return, mean_ep_len = self._rollout()
+
+
             #print(len(self.history.states))
             total_samples += sample_num
             wall_time = time.time() - start_time
             wall_time /= 60 * 60 # store time in hours
 
+
             actor_loss_mean, critic_loss_mean = self._update()
+
 
             #loggging
             if (iter+1)%self.log_interval==0:
@@ -96,7 +101,6 @@ class AWRAgent(Agent):
         num = 0
         total_actor_loss = 0
         total_critic_loss = 0
-
         for _ in range(self.model_update_num_critic):
             mini_batch_index = np.random.choice(num_sample, self.batch_size, replace=False)
             mini_batch_index = torch.LongTensor(mini_batch_index).to(self.dev)
