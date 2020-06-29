@@ -22,7 +22,7 @@ class PPOAgent(Agent):
             total_samples += sample_num
             wall_time = time.time() - start_time
             wall_time /= 60 * 60 # store time in hours
-            actor_loss_mean, critic_loss_mean = self._update(iter)
+            actor_loss_mean, critic_loss_mean = self._update()
 
             #loggging
             if (iter+1)%self.log_interval==0:
@@ -32,8 +32,8 @@ class PPOAgent(Agent):
                 self._logger.log_tabular("Return std", std_train_return)
                 self._logger.log_tabular("Return mean", mean_train_return)
                 self._logger.log_tabular("Episode length", mean_ep_len)
-                self._logger.log_tabular("Actor_loss", actor_loss_mean)
-                self._logger.log_tabular("Critic_loss", critic_loss_mean)
+                self._logger.log_tabular("Actor loss", actor_loss_mean)
+                self._logger.log_tabular("Critic loss", critic_loss_mean)
                 self._logger.print_tabular()
                 self._logger.dump_tabular()
                 if self.wandb:
@@ -43,8 +43,8 @@ class PPOAgent(Agent):
                                "Return std": std_train_return,
                                "Return mean": mean_train_return,
                                "Episode length": mean_ep_len,
-                               "Actor_loss": actor_loss_mean,
-                               "Critic_loss": critic_loss_mean})
+                               "Actor loss": actor_loss_mean,
+                               "Critic loss": critic_loss_mean})
             #check point
             if (iter+1)%self.save_interval==0:
                 self.save_model(iter, self.model_dir)

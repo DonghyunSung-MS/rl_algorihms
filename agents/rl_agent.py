@@ -207,8 +207,9 @@ class Agent(ABC):
             return_buffer.append(discouted_sum_reward)
             ep_len_buffer.append(steps)
             sample_num += steps
-
-        return sample_num, return_buffer.mean(), return_buffer.std(), ep_len_buffer.mean()
+        return_buffer = np.array(return_buffer)
+        ep_len_buffer = np.array(ep_len_buffer)
+        return sample_num, np.mean(return_buffer), np.std(return_buffer), np.mean(ep_len_buffer)
 
     def _render(self, tic, steps):
         if self.benchmark == "dm_control":
