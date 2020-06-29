@@ -51,7 +51,7 @@ PPO = {
         "gpu":True,
         "render":False,
         "log_dir":"./expData/Pendulum-v0/2nd/logs/",
-        "log_interval":1,
+        "log_interval":10,
         "save_interval":30,
         "model_dir":"./expData/Pendulum-v0/2nd/policies/",
         "hidden_size": [128, 128],
@@ -96,25 +96,25 @@ AWR = {
         "gpu":True,
         "render":False,
         "log_dir":"./expData/Pendulum-v0/awr/logs/",
-        "log_interval":1,
+        "log_interval":10,
         "save_interval":30,
         "model_dir":"./expData/Pendulum-v0/awr/policies/",
         "hidden_size": [128, 128],
 
         "gamma":0.99,
         "lamda":0.95,
-        "actor_lr":1e-4,
-        "critic_lr":1e-3,
-        "beta":0.05,
-        "buffer_size":2000,
+        "actor_lr":0.0001,
+        "critic_lr":0.05,
+        "beta":1.0,
+        "buffer_size":10000,
         "max_weight":20,
 
-        "model_update_num_critic":20,
-        "model_update_num_actor":100,
+        "model_update_num_critic":200,
+        "model_update_num_actor":1000,
 
         "max_iter":1000,
-        "batch_size":100,
-        "total_sample_size":500,
+        "batch_size":200,
+        "total_sample_size":2000,
         "test_iter":1000
     }),
     "Walker2d-v2":
@@ -141,6 +141,6 @@ AWR = {
         "max_iter":1000,
         "batch_size":256,
         "total_sample_size":500,
-        "test_iter":1000  
+        "test_iter":1000
     })
 }

@@ -1,7 +1,10 @@
 from agents.rl_agent import *
 
+
+
 class AWRAgent(Agent):
     def set_own_hyper(self, configs):
+        self.ADV_EPS = 1e-5
         #off-policy learning
         self.buffer_size = configs.buffer_size
         #temperature
@@ -22,30 +25,38 @@ class AWRAgent(Agent):
         start_time = time.time()
         total_samples = 0
         for iter in range(self.max_iter):
-            sample_num, avg_train_reward, avg_train_return, avg_steps = self._rollout()
+            sample_num, mean_train_return, std_train_return, mean_ep_len = self._rollout()
             #print(len(self.history.states))
             total_samples += sample_num
             wall_time = time.time() - start_time
             wall_time /= 60 * 60 # store time in hours
+            
+            actor_loss_mean, critic_loss_mean = self._update(iter)
+
+            #loggging
             if (iter+1)%self.log_interval==0:
                 self._logger.log_tabular("Iteration", iter+1)
                 self._logger.log_tabular("Wall_Time", wall_time)
                 self._logger.log_tabular("Samples", total_samples)
-                self._logger.log_tabular("Avg_reward_iter", avg_train_reward)
-                self._logger.log_tabular("Avg_Return_iter", avg_train_return)
-                self._logger.log_tabular("Avg_ep_len_iter", avg_steps)
-
+                self._logger.log_tabular("Return std", std_train_return)
+                self._logger.log_tabular("Return mean", mean_train_return)
+                self._logger.log_tabular("Episode length", mean_ep_len)
+                self._logger.log_tabular("Actor_loss", actor_loss_mean)
+                self._logger.log_tabular("Critic_loss", critic_loss_mean)
+                self._logger.print_tabular()
+                self._logger.dump_tabular()
                 if self.wandb:
                     wandb.log({"Iteration": iter+1,
                                "Wall_Time": wall_time,
                                "Samples": total_samples,
-                               "Avg_reward_iter": avg_train_reward,
-                               "Avg_Return_iter": avg_train_return,
-                               "Avg_ep_len_iter": avg_steps})
-
+                               "Return std": std_train_return,
+                               "Return mean": mean_train_return,
+                               "Episode length": mean_ep_len,
+                               "Actor_loss": actor_loss_mean,
+                               "Critic_loss": critic_loss_mean})
+            #check point
             if (iter+1)%self.save_interval==0:
                 self.save_model(iter, self.model_dir)
-            self._update(iter)
 
     def _update(self, iter):
         """update network parameters"""
@@ -69,72 +80,72 @@ class AWRAgent(Agent):
 
         old_values = self._critic(torch.Tensor(states).to(self.dev))
 
-        _, advantages = rl_utills.calculate_gae(masks, rewards, old_values, self)
+        retrun2go, advantages = rl_utills.calculate_gae(masks, rewards, old_values, self)
 
+        #TD(lambda) Estimate
         target_values = advantages.to(self.dev) + old_values
+
+        #Monte Calro Estimate
+        #target_values = retrun2go
 
         mse = torch.nn.MSELoss()
 
         num_sample = len(rewards)
 
-        arr = np.arange(num_sample)
+
         num = 0
         total_actor_loss = 0
         total_critic_loss = 0
+
         for _ in range(self.model_update_num_critic):
-            np.random.shuffle(arr)
-            for i in range(num_sample//self.batch_size):
-                mini_batch_index = arr[self.batch_size*i : self.batch_size*(i+1)]
-                mini_batch_index = torch.LongTensor(mini_batch_index).to(self.dev)
+            mini_batch_index = np.random.choice(num_sample, self.batch_size, replace=False)
+            mini_batch_index = torch.LongTensor(mini_batch_index).to(self.dev)
 
-                states_samples = torch.Tensor(states)[mini_batch_index].to(self.dev)
-                target_values_samples = target_values[mini_batch_index].to(self.dev)
+            states_samples = torch.Tensor(states)[mini_batch_index].to(self.dev)
+            target_values_samples = target_values[mini_batch_index].to(self.dev)
 
-                old_values_samples = self._critic((states_samples).to(self.dev))
+            old_values_samples = self._critic((states_samples).to(self.dev))
 
-                critic_loss = mse(target_values_samples.detach(), old_values_samples)
+            critic_loss = mse(target_values_samples.detach(), old_values_samples)
 
-                total_critic_loss += critic_loss
+            total_critic_loss += critic_loss
 
-                self.critic_optim.zero_grad()
-                critic_loss.backward()
-                self.critic_optim.step()
+            self.critic_optim.zero_grad()
+            critic_loss.backward()
+            self.critic_optim.step()
 
         #use updated critic
         updated_values = self._critic(torch.Tensor(states).to(self.dev))
         _, updated_advantages = rl_utills.calculate_gae(masks, rewards, updated_values, self)
 
         for _ in range(self.model_update_num_actor):
-            np.random.shuffle(arr)
-            for i in range(num_sample//self.batch_size):
-                mini_batch_index = arr[self.batch_size*i : self.batch_size*(i+1)]
-                mini_batch_index = torch.LongTensor(mini_batch_index).to(self.dev)
+            mini_batch_index = np.random.choice(num_sample, self.batch_size, replace=False)
+            mini_batch_index = torch.LongTensor(mini_batch_index).to(self.dev)
 
-                states_samples = torch.Tensor(states)[mini_batch_index].to(self.dev)
-                actions_samples = torch.Tensor(actions)[mini_batch_index].to(self.dev)
-                updated_advantages_samples = updated_advantages[mini_batch_index].to(self.dev)
+            states_samples = torch.Tensor(states)[mini_batch_index].to(self.dev)
+            actions_samples = torch.Tensor(actions)[mini_batch_index].to(self.dev)
 
-                weights = torch.clamp(updated_advantages_samples/self.beta, max=self.max_weight)
-                #print(weights)
+            updated_advantages_samples = updated_advantages[mini_batch_index].to(self.dev)
 
-                mu, std = self._actor(states_samples)
-                policy_log = self._actor.get_log_prob(actions_samples, mu, std)
+            """
+            exponential of adv tend to explode
+            Try normalizer of sample advantages
+            following author's implementation
+            """
 
-                actor_loss = -(weights * policy_log).mean()
+            normalized_advantatges_samples = (updated_advantages_samples - updated_advantages_samples.mean())/(updated_advantages_samples.std()+self.ADV_EPS)
 
-                total_actor_loss += actor_loss
+            weights = torch.clamp(torch.exp(normalized_advantatges_samples/self.beta), max=self.max_weight)
+            #print(min(torch.exp(normalized_advantatges_samples/self.beta)).item())
+            mu, std = self._actor(states_samples)
+            policy_log = self._actor.get_log_prob(actions_samples, mu, std)
 
-                self.actor_optim.zero_grad()
-                actor_loss.backward()
-                self.actor_optim.step()
+            actor_loss = -(weights * policy_log).mean()
 
+            total_actor_loss += actor_loss
 
-        if (iter+1)%self.log_interval==0:
-            self._logger.log_tabular("Actor_loss", total_actor_loss.item()/self.model_update_num_actor)
-            self._logger.log_tabular("Critic_loss", total_critic_loss.item()/self.model_update_num_critic)
-            self._logger.print_tabular()
-            self._logger.dump_tabular()
-        if self.wandb:
-            wandb.log({"Actor_loss": total_actor_loss.item()/self.model_update_num_actor,
-		       "Critic_loss": total_critic_loss.item()/self.model_update_num_critic
-		      })
+            self.actor_optim.zero_grad()
+            actor_loss.backward()
+            self.actor_optim.step()
+
+        return total_actor_loss.item()/self.model_update_num_actor, total_critic_loss.item()/self.model_update_num_critic

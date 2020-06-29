@@ -17,31 +17,39 @@ class PPOAgent(Agent):
         total_samples = 0
         for iter in range(self.max_iter):
             self.history = Trajectory()
-            sample_num, avg_train_reward, avg_train_return, avg_steps = self._rollout()
-            #print(len(self.history.states))
+            sample_num, mean_train_return, std_train_return, mean_ep_len = self._rollout()
+
             total_samples += sample_num
             wall_time = time.time() - start_time
             wall_time /= 60 * 60 # store time in hours
+            actor_loss_mean, critic_loss_mean = self._update(iter)
+
+            #loggging
             if (iter+1)%self.log_interval==0:
                 self._logger.log_tabular("Iteration", iter+1)
                 self._logger.log_tabular("Wall_Time", wall_time)
                 self._logger.log_tabular("Samples", total_samples)
-                self._logger.log_tabular("Avg_reward_iter", avg_train_reward)
-                self._logger.log_tabular("Avg_Return_iter", avg_train_return)
-                self._logger.log_tabular("Avg_ep_len_iter", avg_steps)
-
+                self._logger.log_tabular("Return std", std_train_return)
+                self._logger.log_tabular("Return mean", mean_train_return)
+                self._logger.log_tabular("Episode length", mean_ep_len)
+                self._logger.log_tabular("Actor_loss", actor_loss_mean)
+                self._logger.log_tabular("Critic_loss", critic_loss_mean)
+                self._logger.print_tabular()
+                self._logger.dump_tabular()
                 if self.wandb:
                     wandb.log({"Iteration": iter+1,
                                "Wall_Time": wall_time,
                                "Samples": total_samples,
-                               "Avg_reward_iter": avg_train_reward,
-                               "Avg_Return_iter": avg_train_return,
-                               "Avg_ep_len_iter": avg_steps})
-
+                               "Return std": std_train_return,
+                               "Return mean": mean_train_return,
+                               "Episode length": mean_ep_len,
+                               "Actor_loss": actor_loss_mean,
+                               "Critic_loss": critic_loss_mean})
+            #check point
             if (iter+1)%self.save_interval==0:
                 self.save_model(iter, self.model_dir)
-            self._update(iter)
-    def _update(self, iter):
+
+    def _update(self):
         """update network parameters"""
         states = self.history.states
         actions = self.history.actions
@@ -108,16 +116,6 @@ class PPOAgent(Agent):
 
                 loss = actor_loss + 0.5 * critic_loss
 
-                '''
-                self.critic_optim.zero_grad()
-                critic_loss.backward()
-                self.critic_optim.step()
-
-                self.actor_optim.zero_grad()
-                actor_loss.backward()
-                self.actor_optim.step()
-                '''
-
                 # update actor & critic
                 self.critic_optim.zero_grad()
                 self.actor_optim.zero_grad()
@@ -125,8 +123,4 @@ class PPOAgent(Agent):
                 self.critic_optim.step()
                 self.actor_optim.step()
 
-        if (iter+1)%self.log_interval==0:
-            self._logger.log_tabular("Actor_loss", total_actor_loss/num)
-            self._logger.log_tabular("Critic_loss", total_critic_loss/num)
-            self._logger.print_tabular()
-            self._logger.dump_tabular()
+        return total_actor_loss/num, total_critic_loss/num

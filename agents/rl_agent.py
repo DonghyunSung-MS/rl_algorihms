@@ -147,36 +147,42 @@ class Agent(ABC):
         pass
 
     def _rollout(self):
-        """rollout utill sample num is larger than max samples per iteration"""
+        """
+        rollout until sample num is larger than max samples per iteration
+        and last episode is finished.
+        """
 
         sample_num = 0
-        episode = 0
-        avg_train_return = 0
-        avg_steps = 0
-        sum_reward_iter = 0
+        return_buffer = []
+        ep_len_buffer = []
 
         while sample_num < self.total_sample_size:
+            #initialize episode
             steps = 0
-            total_reward_per_ep = 0
+            discouted_sum_reward = 0
+
             time_step = None #dm_control
             s = None
             done = False
+
             if self.benchmark == "dm_control":
                 time_step = self._env.reset()
                 s, _ , __ = self.history.covert_time_step_data(time_step)
             elif self.benchmark == "gym":
                 s = self._env.reset()
+
             s_3d = np.reshape(s, [1, self.state_dim])
             #print(time_step.last())
             while not done:
                 tic = time.time()
+
                 mu, std = self._actor(torch.Tensor(s_3d).to(self.dev))
                 action = self._actor.get_action(mu, std)
 
                 s_ = None
                 r = 0.0
                 m = 0.0
-
+                #Action to enviroment and get next state, reward, done(bool)
                 if self.benchmark == "dm_control":
                     time_step = self._env.step(action)
                     s_, r, m = self.history.covert_time_step_data(time_step)
@@ -184,33 +190,25 @@ class Agent(ABC):
                 elif self.benchmark == "gym":
                     s_, r, done, info = self._env.step(action)
                     m = 0.0 if done else 1.0
-                #print(action, s_3d, r, m)
+
                 self.history.store_history(action, s_3d, r, m)
+
                 s = s_
                 s_3d = np.reshape(s, [1, self.state_dim])
-                total_reward_per_ep += r.item(0)
+
+
 
                 if self.render:
                     self._render(tic, steps)
 
                 steps += 1
+                discouted_sum_reward = discouted_sum_reward*self.gamma + r.item(0)
 
-
-            episode += 1
-            self.global_episode += 1
-            if self.wandb:
-                wandb.log({"episode":self.global_episode,
-                           "Ep_total_reward": total_reward_per_ep,
-                           "Ep_Avg_reward": total_reward_per_ep / steps,
-                           "Ep_len": steps})
-            sum_reward_iter += total_reward_per_ep
+            return_buffer.append(discouted_sum_reward)
+            ep_len_buffer.append(steps)
             sample_num += steps
 
-        avg_steps = sample_num / episode
-        avg_train_return = sum_reward_iter / episode
-        avg_train_reward = sum_reward_iter / steps
-
-        return sample_num, avg_train_reward, avg_train_return, avg_steps
+        return sample_num, return_buffer.mean(), return_buffer.std(), ep_len_buffer.mean()
 
     def _render(self, tic, steps):
         if self.benchmark == "dm_control":
