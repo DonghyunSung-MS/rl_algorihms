@@ -1,44 +1,38 @@
 import argparse
 import wandb
+import toml
+from dotmap import DotMap
+
 from agents.ppo import *
 from agents.awr import *
 
 import dm_control.suite as suite
 import gym
-from rl_configs import *
-
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--benchmark", type=str, default="gym")
-    parser.add_argument("--env", type=str, default="Pendulum-v0")
-    parser.add_argument("--task", type=str, default="swingup")
-    parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument('--wandb', action='store_true', help='wand on' )
-    parser.add_argument('--algo', type=str, default="awr")
+    parser.add_argument("--config", type=str)
     args = parser.parse_args()
 
-    env = None
-    if args.benchmark=="dm_control":
-        env = suite.load(args.env, args.task)
-        env._task.__init__(random= args.seed)
-    elif args.benchmark=="gym":
-        env = gym.make(args.env)
-        env.seed(args.seed)
+    config = DotMap(toml.load(args.config))
 
-    configs = None
+    env = None
+    if config.Option.benchmark == "dm_control":
+        env = suite.load(config.Option.env, config.Option.task)
+    elif config.Option.benchmark == "gym":
+        env = gym.make(config.Option.env)
+        env.seed(config.Option.seed)
+
     agent = None
 
-    if args.algo == "ppo":
-        configs = PPO[args.env]
-        agent = PPOAgent(env, configs, args)
-    elif args.algo == "awr":
-        configs = AWR[args.env]
-        agent = AWRAgent(env, configs, args)
+    if config.Option.algorithm == "ppo":
+        agent = PPOAgent(env, config)
+    elif config.Option.algorithm == "awr":
+        agent = AWRAgent(env, config)
 
-    if args.wandb:
+    if config.Option.wandb:
         wandb.init(project="custom-rl-algorithms-test")
-        wandb.config.update(configs)
+        wandb.config.update(config.toDict())
 
     agent.train()
 

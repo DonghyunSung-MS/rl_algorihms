@@ -19,37 +19,37 @@ from agents.core import Actor, Critic
 from abc import ABC, abstractmethod
 
 class Agent(ABC):
-    def __init__(self, env, configs, args):
-        self.benchmark = args.benchmark
+    def __init__(self, env, config):
+        self.benchmark = config.Option.benchmark
         self._env = env
         self._logger = None
         """argument to self value"""
-        self.render = configs.render
+        self.render = config.Option.render
         self.img = None
 
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
-        self.wandb = args.wandb
+        torch.manual_seed(config.Option.seed)
+        np.random.seed(config.Option.seed)
+        self.wandb = config.Option.wandb
 
         #Hyperparameters depend on algorithms
-        self.set_own_hyper(configs)
+        self.set_own_hyper(config.Learning)
 
-        self.log_dir = configs.log_dir
-        self.log_interval = configs.log_interval
+        self.log_dir = config.Log.log_dir
+        self.log_interval = config.Log.log_interval
 
-        self.model_dir = configs.model_dir
-        self.save_interval = configs.save_interval
+        self.model_dir = config.Model.model_dir
+        self.save_interval = config.Model.save_interval
 
-        self.max_iter = configs.max_iter
-        self.batch_size = configs.batch_size
+        self.max_iter = config.Learning.max_iter
+        self.batch_size = config.Learning.batch_size
 
-        self.total_sample_size = configs.total_sample_size
-        self.test_iter = configs.test_iter
+        self.total_sample_size = config.Learning.total_sample_size
+        self.test_iter = config.Learning.test_iter
 
-        self.gamma = configs.gamma
-        self.lamda = configs.lamda
-        self.actor_lr = configs.actor_lr
-        self.critic_lr = configs.critic_lr
+        self.gamma = config.Learning.gamma
+        self.lamda = config.Learning.lamda
+        self.actor_lr = config.Learning.actor_lr
+        self.critic_lr = config.Learning.critic_lr
 
 
         self.state_dim = None
@@ -58,13 +58,16 @@ class Agent(ABC):
         if self.benchmark == "dm_control":
             self.state_dim = 0
             for k, v in self._env.observation_spec().items():
+                shape = list(v.shape)
                 try:
-                    self.state_dim += v.shape[0]
+                    self.state_dim += np.prod(shape)
                 except:
                     self.state_dim += 1
             self.action_dim = self._env.action_spec().shape[0]
             print("State spec : ",self._env.observation_spec())
             print("Action spec: ",self._env.action_spec())
+            print("state_size : ", self.state_dim )
+            print("action_size : ", self.action_dim)
         elif self.benchmark == "gym":
             self.state_dim = self._env.observation_space.shape[0]
             self.action_dim = self._env.action_space.shape[0]
@@ -72,13 +75,13 @@ class Agent(ABC):
             print("action_size : ", self.action_dim)
 
         self.dev = None
-        if configs.gpu:
+        if config.gpu:
             self.dev = torch.device("cuda:0")
         else:
             self.dev = torch.device("cpu")
 
-        self._actor = Actor(self.state_dim, self.action_dim, configs).to(self.dev)
-        self._critic = Critic(self.state_dim, configs).to(self.dev)
+        self._actor = Actor(self.state_dim, self.action_dim, config).to(self.dev)
+        self._critic = Critic(self.state_dim, config).to(self.dev)
 
         self.actor_optim = optim.Adam(self._actor.parameters(), lr=self.actor_lr)
         self.critic_optim = optim.Adam(self._critic.parameters(), lr=self.critic_lr)
@@ -90,7 +93,8 @@ class Agent(ABC):
 
     def test_interact(self, model_path, random=False):
         """load trained parameters"""
-        self._actor.load_state_dict(torch.load(model_path))
+        if not random:
+            self._actor.load_state_dict(torch.load(model_path))
 
         if self.benchmark == "dm_control":
             if random:
@@ -105,7 +109,7 @@ class Agent(ABC):
                     s = None
                     for k, v in time_step.observation.items():
                         if s is None:
-                            s = v
+                            s = v.flatten()
                         else:
                             s = np.hstack([s, v])
                     s_3d = np.reshape(s, [1, self.state_dim])
@@ -131,9 +135,10 @@ class Agent(ABC):
                         next_state, reward, done, info = self._env.step(action)
                     self._env.render()
 
-                    score += reward
+                    score = self.gamma*score + reward
                     next_state = np.reshape(next_state, [1, self.state_dim])
                     state = next_state
+                print(f"test iter : {ep}\tscore : {score}")
 
     @abstractmethod
     def train(self):
@@ -143,7 +148,7 @@ class Agent(ABC):
         pass
 
     @abstractmethod
-    def set_own_hyper(self, args):
+    def set_own_hyper(self, config):
         pass
 
     def _rollout(self):
@@ -189,6 +194,7 @@ class Agent(ABC):
                     done = time_step.last()
                 elif self.benchmark == "gym":
                     s_, r, done, info = self._env.step(action)
+                    r = r.item(0)
                     m = 0.0 if done else 1.0
 
                 self.history.store_history(action, s_3d, r, m)
@@ -202,7 +208,7 @@ class Agent(ABC):
                     self._render(tic, steps)
 
                 steps += 1
-                discouted_sum_reward = discouted_sum_reward*self.gamma + r.item(0)
+                discouted_sum_reward = discouted_sum_reward*self.gamma + r
 
             return_buffer.append(discouted_sum_reward)
             ep_len_buffer.append(steps)

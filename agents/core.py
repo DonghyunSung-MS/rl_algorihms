@@ -3,8 +3,9 @@ from utills.rl_utills import *
 class Actor(nn.Module):
     def __init__(self, input_dim, output_dim, args):
         super().__init__()
-        self.a_net = mlp(input_dim, args.hidden_size, output_dim, len(args.hidden_size)+1, nn.Tanh)
-        self.gpu = args.gpu
+        hidden_size = args.Model.hidden_size
+        self.a_net = mlp(input_dim, hidden_size, output_dim, len(hidden_size)+1, nn.Tanh)
+        self.gpu = args.Option.gpu
 
     def forward(self, x):
         # input -> output(mean of torque+std(constant))
@@ -30,7 +31,8 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     def __init__(self, input_dim, args):
         super().__init__()
-        self.c_net = mlp(input_dim, args.hidden_size, 1, len(args.hidden_size)+1, nn.Tanh)
+        hidden_size = args.Model.hidden_size
+        self.c_net = mlp(input_dim, hidden_size, 1, len(hidden_size)+1, nn.Tanh)
 
 
     def forward(self, x):

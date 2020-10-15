@@ -1,49 +1,42 @@
-import gym
 import argparse
-import dm_control.suite as suite
+import wandb
+import toml
+from dotmap import DotMap
 
-from rl_configs import *
 from agents.ppo import *
 from agents.awr import *
 
-
+import dm_control.suite as suite
+import gym
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--benchmark", type=str, default="gym")
-    parser.add_argument("--env", type=str, default="Pendulum-v0")
-    parser.add_argument("--task", type=str, default="swingup")
-    parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument('--wandb', action='store_true', help='wand on' )
-    parser.add_argument('--algo', type=str, default="awr")
+    parser.add_argument("--config", type=str)
+    parser.add_argument("--policy", type=str, default="0")
     args = parser.parse_args()
 
-    #select benchmark
+    config = DotMap(toml.load(args.config))
+
     env = None
-    if args.benchmark=="dm_control":
-        env = suite.load(args.env, args.task)
-        env._task.__init__(desired_speed=0.1, random = args.seed)
-    elif args.benchmark=="gym":
-        env = gym.make(args.env)
-        env.seed(args.seed)
+    if config.Option.benchmark == "dm_control":
+        env = suite.load(config.Option.env, config.Option.task)
+    elif config.Option.benchmark == "gym":
+        env = gym.make(config.Option.env)
+        env.seed(config.Option.seed)
 
-    configs = None
     agent = None
-    #select algorithms
-    if args.algo == "ppo":
-        configs = PPO[args.env]
-        agent = PPOAgent(env, configs, args)
-    elif args.algo == "awr":
-        configs = AWR[args.env]
-        agent = AWRAgent(env, configs, args)
 
-    if args.wandb:
+    if config.Option.algorithm == "ppo":
+        agent = PPOAgent(env, config)
+    elif config.Option.algorithm == "awr":
+        agent = AWRAgent(env, config)
+
+    if config.Option.wandb:
         wandb.init(project="custom-rl-algorithms-test")
-        wandb.config.update(configs)
+        wandb.config.update(config.toDict())
 
     #get N.N parameters
-    model_path = configs.model_dir+'989th_model_a.pth.tar'
-
+    model_path = config.Model.model_dir + args.policy + "th_model_a.pth.tar"
     agent.test_interact(model_path, random=False)
 
 if __name__=="__main__":

@@ -1,0 +1,6 @@
+gym
+dmcontrol
+numpy
+toml
+dotmap
+torch

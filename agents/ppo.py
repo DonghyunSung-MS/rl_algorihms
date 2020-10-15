@@ -12,7 +12,11 @@ class PPOAgent(Agent):
         log_file = os.path.join(self.log_dir,"log.txt")
         self._logger = logger.Logger()
         self._logger.configure_output_file(log_file)
-
+        
+        if self.wandb:
+            wandb.watch(self._actor)
+            wandb.watch(self._critic)
+        
         start_time = time.time()
         total_samples = 0
         for iter in range(self.max_iter):

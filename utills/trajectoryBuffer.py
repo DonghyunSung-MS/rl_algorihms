@@ -25,7 +25,7 @@ class Trajectory:
         tmp_state = None
         for k, v in time_step.observation.items():
             if tmp_state is None:
-                tmp_state = v
+                tmp_state = v.flatten()
             else:
                 tmp_state = np.hstack([tmp_state, v])
         tmp_reward = time_step.reward
