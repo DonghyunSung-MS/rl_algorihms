@@ -1,0 +1,34 @@
+title = "ppo pendulum"
+
+[Option]
+gpu = false
+render = false
+benchmark = "dm_control"
+env = "manipulator"
+task = "bring_ball"
+wandb = false
+algorithm = "ppo"
+seed = 10
+
+[Log]
+log_dir = "./expData/dm_manipulator/1nd/logs/"
+log_interval = 2
+
+[Model]
+save_interval = 30
+model_dir = "./expData/dm_manipulator/1nd/policies/"
+hidden_size = [128, 128]
+
+[Learning]
+#gae
+gamma = 0.99
+lamda = 0.98
+actor_lr = 1e-4
+critic_lr = 1e-3
+clip_param = 0.2
+
+model_update_num = 10
+max_iter = 1000
+batch_size = 400
+total_sample_size = 4000
+test_iter = 1000
