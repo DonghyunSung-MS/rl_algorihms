@@ -1,5 +1,8 @@
 FROM nvidia/cuda:10.2-runtime-ubuntu18.04
 
+ENV TZ=Asia/Seoul
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 RUN apt-get update \
     && apt-get install -y \
     ffmpeg \
@@ -27,7 +30,11 @@ RUN apt-get update \
 RUN apt-get update \
     && apt-get install -y \
     libffi-dev \
-    libosmesa6-dev \
+    libosmesa6-dev \ 
+    libglfw3 \ 
+    libglew2.0 \
+    libgl1-mesa-glx \
+    libosmesa6\
     patchelf \
     python3-pip \
     && apt-get clean \
@@ -37,7 +44,7 @@ RUN apt-get update \
 RUN mkdir -p /root/.mujoco \
     && wget https://www.roboti.us/download/mujoco200_linux.zip -O mujoco.zip \
     && unzip mujoco.zip -d /root/.mujoco \
-    && cp /root/.mujoco/mujoco200_linux /root/.mujoco/mujoco200 \
+    && cp -r /root/.mujoco/mujoco200_linux /root/.mujoco/mujoco200 \
     && rm mujoco.zip
 #Assume mjkey.txt is in current dir
 #openai gym
