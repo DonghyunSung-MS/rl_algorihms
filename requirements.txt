@@ -1,0 +1,9 @@
+gym
+dmcontrol
+numpy
+toml
+dotmap
+torch
+torchvision
+mujoco-py<2.1,>=2.0
+jupyter
